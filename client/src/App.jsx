@@ -9,9 +9,9 @@ import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import './styles/global.css';
+import { ThemeProvider } from './context/ThemeContext';
 
 function NotFound() {
   return (
@@ -24,22 +24,24 @@ function NotFound() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Navbar />
-        <Routes>
-          <Route path="/"               element={<HomePage />} />
-          <Route path="/country/:code"  element={<CountryPage />} />
-          <Route path="/markets"        element={<MarketsPage />} />
-          <Route path="/news"           element={<GlobalNewsPage />} />
-          <Route path="/about"          element={<AboutPage />} />
-          <Route path="/contact"        element={<ContactPage />} />
-          <Route path="/login"          element={<LoginPage />} />
-          <Route path="/signup"         element={<SignupPage />} />
-          <Route path="*"               element={<NotFound />} />
-        </Routes>
-        <Footer />
-      </BrowserRouter>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Navbar />
+          <Routes>
+            <Route path="/"              element={<HomePage />} />
+            <Route path="/country/:code" element={<CountryPage />} />
+            <Route path="/markets"       element={<MarketsPage />} />
+            <Route path="/news"          element={<GlobalNewsPage />} />
+            <Route path="/about"         element={<AboutPage />} />
+            <Route path="/contact"       element={<ContactPage />} />
+            <Route path="/login"         element={<LoginPage />} />
+            <Route path="/signup"        element={<SignupPage />} />
+            <Route path="*"              element={<NotFound />} />
+          </Routes>
+          <Footer />
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
