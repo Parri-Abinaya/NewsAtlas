@@ -99,6 +99,8 @@ function generateSparkline() {
   });
 }
 
+const NEWS_FILTERS = ['All', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Sports'];
+
 export default function CountryPage() {
   const { code } = useParams();
   const { data, loading, error } = useCountryData(code?.toUpperCase());
@@ -106,6 +108,8 @@ export default function CountryPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('news');
   const [sparkData] = useState(generateSparkline());
+  const [newsQuery, setNewsQuery] = useState('');
+  const [newsFilter, setNewsFilter] = useState('All');
 
   useEffect(() => {
     if (data?.facts?.name) {
@@ -115,6 +119,11 @@ export default function CountryPage() {
       }).catch(() => {});
     }
   }, [data, code]);
+
+  // Reset news search when switching away from news tab
+  useEffect(() => {
+    if (activeTab !== 'news') { setNewsQuery(''); setNewsFilter('All'); }
+  }, [activeTab]);
 
   const handleSave = async () => {
     if (!data?.facts) return;
@@ -154,6 +163,23 @@ export default function CountryPage() {
   );
 
   const { facts, news, weather, currency, summary } = data || {};
+
+  // Filter news by query (title + description) and category
+  const filteredNews = (news || []).filter(article => {
+    const q = newsQuery.trim().toLowerCase();
+    const source = typeof article.source === 'string'
+      ? article.source
+      : article.source?.name ?? '';
+    const matchesQuery = !q || (
+      article.title?.toLowerCase().includes(q) ||
+      article.description?.toLowerCase().includes(q) ||
+      source.toLowerCase().includes(q)
+    );
+    const matchesFilter = newsFilter === 'All' ||
+      article.category?.toLowerCase() === newsFilter.toLowerCase() ||
+      article.title?.toLowerCase().includes(newsFilter.toLowerCase());
+    return matchesQuery && matchesFilter;
+  });
 
   return (
     <main className="main-content page-wrapper">
@@ -239,12 +265,50 @@ export default function CountryPage() {
         </div>
 
         {activeTab === 'news' && (
-          <div className="news-grid">
-            {(news || []).map((article, i) => <NewsCard key={i} article={article} />)}
-            {(!news || news.length === 0) && (
-              <p style={{ color: 'var(--ink-muted)', fontStyle: 'italic', gridColumn: '1/-1' }}>No news articles available at this time.</p>
-            )}
-          </div>
+          <>
+            {/* Search bar — matches GlobalNewsPage style */}
+            <div className="search-wrapper" style={{ margin: '0 0 1rem' }}>
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search headlines..."
+                value={newsQuery}
+                onChange={e => setNewsQuery(e.target.value)}
+              />
+            </div>
+
+            {/* Category filter tabs */}
+            <div className="tabs" style={{ marginBottom: '1rem' }}>
+              {NEWS_FILTERS.map(f => (
+                <button
+                  key={f}
+                  className={`tab ${newsFilter === f ? 'active' : ''}`}
+                  onClick={() => setNewsFilter(f)}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            {/* Article count */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                <span className="live-dot" />{filteredNews.length} article{filteredNews.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="news-grid">
+              {filteredNews.map((article, i) => <NewsCard key={i} article={article} />)}
+
+              {filteredNews.length === 0 && (
+                <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 1rem', color: 'var(--ink-muted)' }}>
+                  <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>No articles found</p>
+                  <p style={{ fontSize: '0.875rem' }}>Try a different search term or category</p>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {activeTab === 'facts' && facts && (

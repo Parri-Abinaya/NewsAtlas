@@ -13,7 +13,6 @@ export default function Footer() {
           </Link>
         ))}
       </div>
-      <div>© {new Date().getFullYear()} News Atlas — Built with React, Express & Claude AI</div>
     </footer>
   );
 }
