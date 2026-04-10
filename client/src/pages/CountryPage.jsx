@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useCountryData } from '../hooks/useCountryData';
 import { saveCountry, removeSavedCountry, getSavedCountries } from '../services/api';
@@ -6,6 +6,82 @@ import NewsCard from '../components/NewsCard';
 import { Spinner } from '../components/LoadingSkeleton';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+// ─── Audio hook ───────────────────────────────────────────────────────────────
+function useTextToSpeech() {
+  const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const utteranceRef = useRef(null);
+
+  const speak = (text) => {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.92;
+    utterance.pitch = 1;
+    utteranceRef.current = utterance;
+    utterance.onstart = () => { setSpeaking(true); setPaused(false); };
+    utterance.onend = () => { setSpeaking(false); setPaused(false); };
+    utterance.onerror = () => { setSpeaking(false); setPaused(false); };
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const pause = () => {
+    window.speechSynthesis.pause();
+    setPaused(true);
+  };
+
+  const resume = () => {
+    window.speechSynthesis.resume();
+    setPaused(false);
+  };
+
+  const stop = () => {
+    window.speechSynthesis.cancel();
+    setSpeaking(false);
+    setPaused(false);
+  };
+
+  useEffect(() => () => window.speechSynthesis.cancel(), []);
+
+  return { speaking, paused, speak, pause, resume, stop };
+}
+
+// ─── Audio Player Bar ─────────────────────────────────────────────────────────
+function AudioPlayerBar({ speaking, paused, onPause, onResume, onStop, label }) {
+  if (!speaking) return null;
+  return (
+    <div style={{
+      position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--warm-white)', border: '1px solid var(--border)',
+      borderRadius: '999px', padding: '0.6rem 1.25rem',
+      display: 'flex', alignItems: 'center', gap: '0.75rem',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.12)', zIndex: 9999,
+      fontFamily: 'var(--font-display)', fontSize: '0.82rem',
+      minWidth: 260,
+    }}>
+      <span style={{ fontSize: '1rem' }}>🎙</span>
+      <span style={{ color: 'var(--ink-muted)', flex: 1, fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {label}
+      </span>
+      <button onClick={paused ? onResume : onPause} style={{
+        background: 'var(--parchment)', border: '1px solid var(--border)',
+        borderRadius: '50%', width: 30, height: 30, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem'
+      }}>
+        {paused ? '▶' : '⏸'}
+      </button>
+      <button onClick={onStop} style={{
+        background: 'var(--rose)', border: 'none',
+        borderRadius: '50%', width: 30, height: 30, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '0.75rem', color: '#fff'
+      }}>
+        ⏹
+      </button>
+    </div>
+  );
+}
+
+// ─── Widgets (unchanged) ──────────────────────────────────────────────────────
 function WeatherWidget({ weather }) {
   if (!weather) return null;
   return (
@@ -101,6 +177,7 @@ function generateSparkline() {
 
 const NEWS_FILTERS = ['All', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Sports'];
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function CountryPage() {
   const { code } = useParams();
   const { data, loading, error } = useCountryData(code?.toUpperCase());
@@ -110,6 +187,8 @@ export default function CountryPage() {
   const [sparkData] = useState(generateSparkline());
   const [newsQuery, setNewsQuery] = useState('');
   const [newsFilter, setNewsFilter] = useState('All');
+  const { speaking, paused, speak, pause, resume, stop } = useTextToSpeech();
+  const [audioLabel, setAudioLabel] = useState('');
 
   useEffect(() => {
     if (data?.facts?.name) {
@@ -120,10 +199,27 @@ export default function CountryPage() {
     }
   }, [data, code]);
 
-  // Reset news search when switching away from news tab
   useEffect(() => {
     if (activeTab !== 'news') { setNewsQuery(''); setNewsFilter('All'); }
   }, [activeTab]);
+
+  // Stop TTS when navigating away
+  useEffect(() => () => stop(), []);
+
+  const handleReadPage = () => {
+    if (speaking) { stop(); return; }
+    const { facts, summary, weather, currency } = data || {};
+    const parts = [];
+    if (facts?.name) parts.push(`${facts.name}.`);
+    if (summary) parts.push(summary);
+    if (facts?.capital) parts.push(`Capital: ${facts.capital}.`);
+    if (facts?.population) parts.push(`Population: ${facts.population.toLocaleString()}.`);
+    if (weather) parts.push(`Current weather in ${weather.city}: ${weather.description}, ${weather.temp} degrees Celsius.`);
+    if (currency) parts.push(`Currency: ${currency.name}. Exchange rate: ${parseFloat(currency.rate).toFixed(2)} per US dollar.`);
+    const text = parts.join(' ');
+    setAudioLabel(`Reading ${facts?.name || 'page'}...`);
+    speak(text);
+  };
 
   const handleSave = async () => {
     if (!data?.facts) return;
@@ -164,12 +260,9 @@ export default function CountryPage() {
 
   const { facts, news, weather, currency, summary } = data || {};
 
-  // Filter news by query (title + description) and category
   const filteredNews = (news || []).filter(article => {
     const q = newsQuery.trim().toLowerCase();
-    const source = typeof article.source === 'string'
-      ? article.source
-      : article.source?.name ?? '';
+    const source = typeof article.source === 'string' ? article.source : article.source?.name ?? '';
     const matchesQuery = !q || (
       article.title?.toLowerCase().includes(q) ||
       article.description?.toLowerCase().includes(q) ||
@@ -183,6 +276,16 @@ export default function CountryPage() {
 
   return (
     <main className="main-content page-wrapper">
+      {/* Floating audio player */}
+      <AudioPlayerBar
+        speaking={speaking}
+        paused={paused}
+        onPause={pause}
+        onResume={resume}
+        onStop={stop}
+        label={audioLabel}
+      />
+
       {/* Header */}
       <div className="country-header">
         <div className="container">
@@ -201,7 +304,7 @@ export default function CountryPage() {
                 {facts?.name}
               </h1>
               <p style={{ color: 'var(--ink-muted)', fontSize: '0.85rem', marginBottom: '1.25rem', fontWeight: 300 }}>{facts?.officialName}</p>
-              <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 {[
                   { label: 'Population', value: facts?.population?.toLocaleString() },
                   { label: 'Capital', value: facts?.capital },
@@ -212,6 +315,25 @@ export default function CountryPage() {
                     <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '1.1rem', color: 'var(--rose-dark)' }}>{item.value}</div>
                   </div>
                 ))}
+
+                {/* 🔊 Read Page button */}
+                <button
+                  onClick={handleReadPage}
+                  title={speaking ? 'Stop reading' : 'Read page aloud'}
+                  style={{
+                    marginLeft: 'auto',
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                    background: speaking ? 'var(--rose)' : 'var(--parchment)',
+                    color: speaking ? '#fff' : 'var(--ink-muted)',
+                    border: `1px solid ${speaking ? 'var(--rose)' : 'var(--border)'}`,
+                    borderRadius: '999px', padding: '0.45rem 1rem',
+                    fontSize: '0.78rem', cursor: 'pointer',
+                    fontFamily: 'var(--font-display)', fontStyle: 'italic',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {speaking ? '⏹ Stop' : '🔊 Read Page'}
+                </button>
               </div>
             </div>
             <button className={`fav-btn ${isSaved ? 'saved' : ''}`} onClick={handleSave} disabled={saveLoading}>
@@ -222,7 +344,6 @@ export default function CountryPage() {
       </div>
 
       <div className="container" style={{ padding: '2.5rem 1.5rem' }}>
-        {/* AI Summary */}
         {summary && (
           <div className="ai-summary" style={{ marginBottom: '2rem' }}>
             <div className="ai-badge">✦ AI Intelligence Brief</div>
@@ -230,13 +351,11 @@ export default function CountryPage() {
           </div>
         )}
 
-        {/* Weather + Currency */}
         <div className="grid-2" style={{ marginBottom: '2rem' }}>
           <WeatherWidget weather={weather} />
           <CurrencyWidget currency={currency} />
         </div>
 
-        {/* Chart */}
         <div className="card" style={{ marginBottom: '2rem' }}>
           <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--ink-subtle)', marginBottom: '1rem' }}>
             📈 Economic Activity Index (Simulated)
@@ -258,7 +377,6 @@ export default function CountryPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Tabs */}
         <div className="tabs">
           <button className={`tab ${activeTab === 'news' ? 'active' : ''}`} onClick={() => setActiveTab('news')}>🌸 Latest News</button>
           <button className={`tab ${activeTab === 'facts' ? 'active' : ''}`} onClick={() => setActiveTab('facts')}>📋 Country Facts</button>
@@ -266,7 +384,6 @@ export default function CountryPage() {
 
         {activeTab === 'news' && (
           <>
-            {/* Search bar — matches GlobalNewsPage style */}
             <div className="search-wrapper" style={{ margin: '0 0 1rem' }}>
               <span className="search-icon">🔍</span>
               <input
@@ -278,20 +395,12 @@ export default function CountryPage() {
               />
             </div>
 
-            {/* Category filter tabs */}
             <div className="tabs" style={{ marginBottom: '1rem' }}>
               {NEWS_FILTERS.map(f => (
-                <button
-                  key={f}
-                  className={`tab ${newsFilter === f ? 'active' : ''}`}
-                  onClick={() => setNewsFilter(f)}
-                >
-                  {f}
-                </button>
+                <button key={f} className={`tab ${newsFilter === f ? 'active' : ''}`} onClick={() => setNewsFilter(f)}>{f}</button>
               ))}
             </div>
 
-            {/* Article count */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
                 <span className="live-dot" />{filteredNews.length} article{filteredNews.length !== 1 ? 's' : ''}
@@ -300,7 +409,6 @@ export default function CountryPage() {
 
             <div className="news-grid">
               {filteredNews.map((article, i) => <NewsCard key={i} article={article} />)}
-
               {filteredNews.length === 0 && (
                 <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem 1rem', color: 'var(--ink-muted)' }}>
                   <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>No articles found</p>

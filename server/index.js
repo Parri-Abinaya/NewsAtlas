@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -7,6 +8,7 @@ const countryRoutes = require('./routes/country');
 const feedbackRoutes = require('./routes/feedback');
 const marketRoutes = require('./routes/markets');
 const savedRoutes = require('./routes/saved');
+const authRoutes = require('./routes/authRoutes.js');
 
 const app = express();
 app.use(cors());
@@ -22,7 +24,7 @@ app.use('/api/country', countryRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/markets', marketRoutes);
 app.use('/api/saved', savedRoutes);
-
+app.use('/api/auth', authRoutes);
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 const PORT = process.env.PORT || 5000;
